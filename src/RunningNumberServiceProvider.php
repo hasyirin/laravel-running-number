@@ -2,9 +2,9 @@
 
 namespace Hasyirin\RunningNumber;
 
+use Hasyirin\RunningNumber\Commands\RunningNumberCommand;
 use Spatie\LaravelPackageTools\Package;
 use Spatie\LaravelPackageTools\PackageServiceProvider;
-use Hasyirin\RunningNumber\Commands\RunningNumberCommand;
 
 class RunningNumberServiceProvider extends PackageServiceProvider
 {

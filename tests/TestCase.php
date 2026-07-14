@@ -2,9 +2,9 @@
 
 namespace Hasyirin\RunningNumber\Tests;
 
+use Hasyirin\RunningNumber\RunningNumberServiceProvider;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Orchestra\Testbench\TestCase as Orchestra;
-use Hasyirin\RunningNumber\RunningNumberServiceProvider;
 
 class TestCase extends Orchestra
 {
