@@ -1,17 +1,17 @@
 {
-    "name": ":vendor_slug/:package_slug",
-    "description": ":package_description",
+    "name": "hasyirin/laravel-running-number",
+    "description": "This is my package laravel-running-number",
     "keywords": [
-        ":vendor_name",
+        "Hasyirin",
         "laravel",
-        ":package_slug"
+        "laravel-running-number"
     ],
-    "homepage": "https://github.com/:vendor_slug/:package_slug",
+    "homepage": "https://github.com/hasyirin/laravel-running-number",
     "license": "MIT",
     "authors": [
         {
-            "name": ":author_name",
-            "email": "author@domain.com",
+            "name": "Hasyirin Fakhriy",
+            "email": "hasyirin@novarift.my",
             "role": "Developer"
         }
     ],
@@ -35,13 +35,13 @@
     },
     "autoload": {
         "psr-4": {
-            "VendorName\\Skeleton\\": "src/",
-            "VendorName\\Skeleton\\Database\\Factories\\": "database/factories/"
+            "Hasyirin\\RunningNumber\\": "src/",
+            "Hasyirin\\RunningNumber\\Database\\Factories\\": "database/factories/"
         }
     },
     "autoload-dev": {
         "psr-4": {
-            "VendorName\\Skeleton\\Tests\\": "tests/",
+            "Hasyirin\\RunningNumber\\Tests\\": "tests/",
             "Workbench\\App\\": "workbench/app/"
         }
     },
@@ -63,10 +63,10 @@
     "extra": {
         "laravel": {
             "providers": [
-                "VendorName\\Skeleton\\SkeletonServiceProvider"
+                "Hasyirin\\RunningNumber\\RunningNumberServiceProvider"
             ],
             "aliases": {
-                "Skeleton": "VendorName\\Skeleton\\Facades\\Skeleton"
+                "RunningNumber": "Hasyirin\\RunningNumber\\Facades\\RunningNumber"
             }
         }
     },
