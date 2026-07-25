@@ -1,6 +1,6 @@
 {
     "name": "hasyirin/laravel-running-number",
-    "description": "This is my package laravel-running-number",
+    "description": "Sequential, zero-padded, formatted running numbers for Laravel — with resets, gap-safe concurrency, and skip/undo support.",
     "keywords": [
         "Hasyirin",
         "laravel",
