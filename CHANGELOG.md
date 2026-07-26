@@ -2,6 +2,19 @@
 
 All notable changes to `laravel-running-number` will be documented in this file.
 
+## v2.0.0 - 2026-07-26
+
+### Breaking changes
+
+Migrations are no longer run automatically. You must now publish and run them explicitly:
+
+```bash
+php artisan vendor:publish --tag="laravel-running-number-migrations"
+php artisan migrate
+
+```
+**Upgrading from v1.x:** run the two commands above before deploying — the package no longer creates its tables for you automatically on `php artisan migrate`.
+
 ## v1.0.0 - 2026-07-25
 
 Initial release.
