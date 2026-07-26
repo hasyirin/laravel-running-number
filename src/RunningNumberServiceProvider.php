@@ -19,7 +19,6 @@ class RunningNumberServiceProvider extends PackageServiceProvider
                 'create_running_number_skips_table',
                 'create_running_number_undos_table',
             ])
-            ->runsMigrations()
             ->hasCommand(SyncRunningNumbersCommand::class);
     }
 

@@ -1,6 +1,16 @@
 <?php
 
+use Hasyirin\RunningNumber\RunningNumberServiceProvider;
 use Illuminate\Support\Facades\Schema;
+use Spatie\LaravelPackageTools\Package;
+
+it('does not auto-run its migrations, requiring the host app to publish and run them explicitly', function () {
+    $package = new Package;
+
+    (new RunningNumberServiceProvider($this->app))->configurePackage($package);
+
+    expect($package->runsMigrations)->toBeFalse();
+});
 
 it('creates all three running number tables with the expected columns', function () {
     expect(Schema::hasColumns('running_numbers', [
