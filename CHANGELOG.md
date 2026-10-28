@@ -2,6 +2,16 @@
 
 All notable changes to `laravel-running-number` will be documented in this file.
 
+## v2.1.0 - 2026-10-28
+
+### Dependencies
+
+- The minimum `spatie/laravel-package-tools` version is now `^1.93.3` (was `^1.16`). It still supports every Laravel version this package supports (11, 12 and 13).
+- The test suite now supports Pest 5 on Laravel 13. Laravel 12 keeps Pest 4, because Pest 5 does not install on Laravel 12.
+- All dev dependency minimums are raised to their latest releases.
+
+No code changes. No upgrade steps are needed.
+
 ## v2.0.0 - 2026-07-26
 
 ### Breaking changes
@@ -11,6 +21,7 @@ Migrations are no longer run automatically. You must now publish and run them ex
 ```bash
 php artisan vendor:publish --tag="laravel-running-number-migrations"
 php artisan migrate
+
 
 ```
 **Upgrading from v1.x:** run the two commands above before deploying — the package no longer creates its tables for you automatically on `php artisan migrate`.
