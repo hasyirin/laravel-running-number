@@ -4,10 +4,15 @@ namespace Hasyirin\RunningNumber\Testing;
 
 use BackedEnum;
 use Closure;
+use Hasyirin\RunningNumber\Concerns\ResolvesSettings;
 use Hasyirin\RunningNumber\Concerns\ResolvesType;
 use Hasyirin\RunningNumber\Contracts\RunningNumber as RunningNumberContract;
 use Hasyirin\RunningNumber\Enums\ResetInterval;
 use Hasyirin\RunningNumber\Enums\UndoMode;
+use Hasyirin\RunningNumber\Exceptions\RunningNumberAlreadyIssued;
+use Hasyirin\RunningNumber\Exceptions\RunningNumberNotSkipped;
+use Hasyirin\RunningNumber\Exceptions\RunningNumberNotUndoable;
+use Hasyirin\RunningNumber\Exceptions\RunningNumberTypeNotRegistered;
 use Hasyirin\RunningNumber\PendingRunningNumber;
 use Illuminate\Contracts\Support\Arrayable;
 use Illuminate\Database\Eloquent\Model;
@@ -16,13 +21,16 @@ use PHPUnit\Framework\Assert as PHPUnit;
 
 class RunningNumberFake implements RunningNumberContract
 {
+    use ResolvesSettings;
     use ResolvesType;
 
     private array $counters = [];
 
-    private array $config = [];
+    private array $settings = [];
 
     private array $skips = [];
+
+    private array $undoneNumbers = [];
 
     private array $reclaimQueue = [];
 
@@ -60,15 +68,18 @@ class RunningNumberFake implements RunningNumberContract
 
     public function generateFor(string $type, ?string $format, ?int $padding, ?string $timezone): string
     {
-        if (! empty($this->reclaimQueue[$type] ?? [])) {
+        $settings = $this->settingsFor($type, (bool) config('running-number.auto_register'));
+
+        if ($settings['undo_mode'] === UndoMode::RECLAIM && ! empty($this->reclaimQueue[$type] ?? [])) {
             sort($this->reclaimQueue[$type]);
             $number = array_shift($this->reclaimQueue[$type]);
+            unset($this->undoneNumbers[$type][$number]);
         } else {
             $this->counters[$type] ??= 0;
 
             do {
                 $this->counters[$type]++;
-            } while (in_array($this->counters[$type], $this->skips[$type] ?? [], true));
+            } while (isset($this->skips[$type][$this->counters[$type]]));
 
             $number = $this->counters[$type];
         }
@@ -82,13 +93,15 @@ class RunningNumberFake implements RunningNumberContract
 
     public function currentFor(string $type, ?string $format, ?int $padding, ?string $timezone): string
     {
+        $this->settingsFor($type);
+
         return $this->render($type, $this->counters[$type] ?? 0, $format, $padding, $timezone);
     }
 
     public function previewFor(string $type, ?int $number, ?string $format, ?int $padding, ?string $timezone): string
     {
-        $padding ??= $this->config[$type]['padding'] ?? config('running-number.default_padding');
-        $format ??= $this->config[$type]['format'] ?? config('running-number.default_format');
+        $padding ??= $this->lookupSettings($type)['padding'] ?? config('running-number.default_padding');
+        $format ??= $this->lookupSettings($type)['format'] ?? config('running-number.default_format');
 
         $representation = $number !== null
             ? str_pad((string) $number, $padding, '0', STR_PAD_LEFT)
@@ -104,20 +117,30 @@ class RunningNumberFake implements RunningNumberContract
 
     public function registerFor(
         string $type,
-        ?ResetInterval $interval,
-        ?int $padding,
-        ?string $format,
-        ?int $resetMonth,
-        ?int $resetDay,
-        ?int $resetWeekday,
-        ?int $resetHour,
-        ?UndoMode $undoMode,
-        ?string $timezone,
+        ?ResetInterval $interval = null,
+        ?int $padding = null,
+        ?string $format = null,
+        ?int $resetMonth = null,
+        ?int $resetDay = null,
+        ?int $resetWeekday = null,
+        ?int $resetHour = null,
+        ?UndoMode $undoMode = null,
+        ?string $timezone = null,
+        bool $replace = false,
     ): void {
-        $this->config[$type] = [
-            'padding' => $padding ?? config('running-number.default_padding'),
-            'format' => $format ?? config('running-number.default_format'),
-        ];
+        $this->settings[$type] = $this->resolveSettings(
+            $this->lookupSettings($type),
+            $replace,
+            $interval,
+            $padding,
+            $format,
+            $resetMonth,
+            $resetDay,
+            $resetWeekday,
+            $resetHour,
+            $undoMode,
+            $timezone,
+        );
 
         $this->registered->push([
             'type' => $type,
@@ -135,44 +158,85 @@ class RunningNumberFake implements RunningNumberContract
 
     public function skipFor(string $type, int|array $numbers, ?string $reason): void
     {
+        $this->settingsFor($type);
+
         foreach ((array) $numbers as $number) {
-            $this->skips[$type][] = $number;
+            if ($number <= ($this->counters[$type] ?? 0)) {
+                throw RunningNumberAlreadyIssued::forNumber($type, $number, $this->counters[$type] ?? 0);
+            }
+        }
+
+        foreach ((array) $numbers as $number) {
+            $this->skips[$type][$number] ??= false;
             $this->skipped->push(['type' => $type, 'number' => $number, 'reason' => $reason]);
         }
     }
 
     public function useSkippedFor(string $type, int $number, ?string $format, ?int $padding, ?string $timezone): string
     {
+        $this->settingsFor($type);
+
+        if (($this->skips[$type][$number] ?? null) !== false) {
+            throw RunningNumberNotSkipped::forNumber($type, $number);
+        }
+
+        $this->skips[$type][$number] = true;
         $this->usedSkipped->push(['type' => $type, 'number' => $number]);
 
         return $this->render($type, $number, $format, $padding, $timezone);
     }
 
-    // Simplification: the fake always treats undo as reclaim-mode (pushes the number onto
-    // the reclaim queue so it resurfaces on the next generate()), regardless of the
-    // `undoMode` the type was registered with. It does not simulate UndoMode::RECORD,
-    // where the real manager would log the undo without making the number reusable.
     public function undoFor(string $type, int $number, ?string $reason): void
     {
-        $this->reclaimQueue[$type][] = $number;
+        $settings = $this->settingsFor($type);
+
+        $issued = isset($this->skips[$type][$number])
+            ? $this->skips[$type][$number]
+            : $number >= 1 && $number <= ($this->counters[$type] ?? 0);
+
+        if (! $issued || isset($this->undoneNumbers[$type][$number])) {
+            throw RunningNumberNotUndoable::forNumber($type, $number);
+        }
+
+        $this->undoneNumbers[$type][$number] = true;
+
+        if ($settings['undo_mode'] === UndoMode::RECLAIM) {
+            $this->reclaimQueue[$type][] = $number;
+        }
+
         $this->undone->push(['type' => $type, 'number' => $number, 'reason' => $reason]);
     }
 
     public function resetFor(string $type): void
     {
+        $this->settingsFor($type);
+
         $this->counters[$type] = 0;
-        unset($this->skips[$type]);
-        unset($this->reclaimQueue[$type]);
+        unset($this->skips[$type], $this->undoneNumbers[$type], $this->reclaimQueue[$type]);
         $this->resets->push(['type' => $type]);
     }
 
+    private function settingsFor(string $type, bool $autoRegister = false): array
+    {
+        if ($this->lookupSettings($type) === null && ! $autoRegister) {
+            throw RunningNumberTypeNotRegistered::forType($type);
+        }
+
+        return $this->settings[$type] ??= $this->lookupSettings($type) ?? $this->resolveSettings(null, true);
+    }
+
+    private function lookupSettings(string $type): ?array
+    {
+        return $this->settings[$type] ?? $this->declaredSettings($type);
+    }
+
     // Simplification: only the `{number}` token is substituted. Unlike the real manager,
-    // which resolves date tokens (e.g. `{Y}`, `{m}`) via now($timezone)->format(...), the
-    // fake leaves any other token in the format string as literal text.
+    // which resolves date tokens (e.g. `{Y}`, `{m}`) and `{period:...}` tokens, the fake
+    // leaves any other token in the format string as literal text.
     private function render(string $type, int $number, ?string $format, ?int $padding, ?string $timezone): string
     {
-        $padding ??= $this->config[$type]['padding'] ?? config('running-number.default_padding');
-        $format ??= $this->config[$type]['format'] ?? config('running-number.default_format');
+        $padding ??= $this->lookupSettings($type)['padding'] ?? config('running-number.default_padding');
+        $format ??= $this->lookupSettings($type)['format'] ?? config('running-number.default_format');
 
         return str_replace('{number}', str_pad((string) $number, $padding, '0', STR_PAD_LEFT), $format);
     }

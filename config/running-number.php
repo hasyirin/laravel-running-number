@@ -5,8 +5,8 @@ use Hasyirin\RunningNumber\Enums\UndoMode;
 
 return [
 
-    // If true, generate() silently registers an unknown type using the defaults below
-    // instead of throwing RunningNumberTypeNotRegistered.
+    // If true, generate() silently registers an unknown type instead of throwing
+    // RunningNumberTypeNotRegistered: with its settings in 'types' below, or with the defaults.
     'auto_register' => false,
 
     'default_padding' => 5,

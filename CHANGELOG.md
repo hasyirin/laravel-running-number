@@ -19,12 +19,19 @@ No code changes. No upgrade steps are needed.
 Migrations are no longer run automatically. You must now publish and run them explicitly:
 
 ```bash
-php artisan vendor:publish --tag="laravel-running-number-migrations"
+php artisan vendor:publish --tag="running-number-migrations"
 php artisan migrate
-
-
 ```
-**Upgrading from v1.x:** run the two commands above before deploying — the package no longer creates its tables for you automatically on `php artisan migrate`.
+
+**Upgrading from v1.x:** v1 already created the tables, so `php artisan migrate` fails with "table already exists" on the published migrations. Publish them, then mark them as run before you migrate. v1 saved them in the `migrations` table without a date prefix, so rename those rows to the published file names:
+
+```php
+// php artisan tinker
+foreach (['create_running_numbers_table', 'create_running_number_skips_table', 'create_running_number_undos_table'] as $name) {
+    $published = glob(database_path("migrations/*_{$name}.php"))[0] ?? throw new RuntimeException("Publish the migrations first: {$name} is missing.");
+    DB::table('migrations')->where('migration', $name)->update(['migration' => basename($published, '.php')]);
+}
+```
 
 ## v1.0.0 - 2026-07-25
 

@@ -26,7 +26,15 @@ class TestCase extends Orchestra
 
     public function getEnvironmentSetUp($app)
     {
-        config()->set('database.default', 'testing');
+        $connection = env('RUNNING_NUMBER_TEST_CONNECTION', 'testing');
+
+        config()->set('database.default', $connection);
+
+        // RefreshDatabase drops every table, so never run against the database that DB_DATABASE or DB_URL names.
+        if ($connection !== 'testing') {
+            config()->set("database.connections.{$connection}.url", null);
+            config()->set("database.connections.{$connection}.database", 'running_number_testing');
+        }
     }
 
     protected function defineDatabaseMigrations()

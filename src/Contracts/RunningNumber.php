@@ -25,15 +25,16 @@ interface RunningNumber
 
     public function registerFor(
         string $type,
-        ?ResetInterval $interval,
-        ?int $padding,
-        ?string $format,
-        ?int $resetMonth,
-        ?int $resetDay,
-        ?int $resetWeekday,
-        ?int $resetHour,
-        ?UndoMode $undoMode,
-        ?string $timezone,
+        ?ResetInterval $interval = null,
+        ?int $padding = null,
+        ?string $format = null,
+        ?int $resetMonth = null,
+        ?int $resetDay = null,
+        ?int $resetWeekday = null,
+        ?int $resetHour = null,
+        ?UndoMode $undoMode = null,
+        ?string $timezone = null,
+        bool $replace = false,
     ): void;
 
     public function skipFor(string $type, int|array $numbers, ?string $reason): void;

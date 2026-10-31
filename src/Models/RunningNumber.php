@@ -6,11 +6,13 @@ use Hasyirin\RunningNumber\Database\Factories\RunningNumberFactory;
 use Hasyirin\RunningNumber\Enums\ResetInterval;
 use Hasyirin\RunningNumber\Enums\UndoMode;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Date;
 
 /**
  * @property int $id
@@ -64,8 +66,28 @@ class RunningNumber extends Model
             'reset_cycle' => 'integer',
             'number' => 'integer',
             'padding' => 'integer',
-            'last_reset_at' => 'datetime',
         ];
+    }
+
+    // Saved in UTC: app-time text has no offset, so in the hour that repeats when daylight saving
+    // time ends it reads back one hour early, and a boundary in that hour would reset again.
+    protected function lastResetAt(): Attribute
+    {
+        return Attribute::make(
+            get: fn (?string $value) => $value === null ? null : Date::parse($value, 'UTC')->setTimezone(date_default_timezone_get()),
+            set: fn (mixed $value) => $value === null ? null : $this->asDateTime($value)->utc()->format($this->getDateFormat()),
+        )->withoutObjectCaching();
+    }
+
+    // Set here, like created_at, and not in a creating hook: seeders that use WithoutModelEvents
+    // (the Laravel default) and saveQuietly() fire no model events.
+    public function updateTimestamps()
+    {
+        if (! $this->exists) {
+            $this->last_reset_at ??= now();
+        }
+
+        return parent::updateTimestamps();
     }
 
     protected static function newFactory(): RunningNumberFactory

@@ -3,6 +3,7 @@
 use Hasyirin\RunningNumber\Enums\ResetInterval;
 use Hasyirin\RunningNumber\Models\RunningNumber;
 use Hasyirin\RunningNumber\RunningNumberManager;
+use Illuminate\Support\Carbon;
 
 it('for() does no database work until a terminal method is called', function () {
     $pending = (new RunningNumberManager)->for('invoice');
@@ -16,6 +17,21 @@ it('chained format/padding/timezone overrides reach generate()', function () {
     $result = (new RunningNumberManager)->for('invoice')->format('{Y}-{number}')->padding(2)->timezone('UTC')->generate();
 
     expect($result)->toBe(now('UTC')->format('Y').'-01');
+});
+
+it('chained format/padding/timezone overrides reach useSkipped()', function () {
+    RunningNumber::factory()->create(['type' => 'invoice', 'number' => 4, 'padding' => 4, 'format' => '{number}']);
+    $pending = (new RunningNumberManager)->for('invoice');
+    $pending->skip(6);
+    Carbon::setTestNow(Carbon::parse('2026-12-31 20:00:00', 'UTC'));
+
+    expect($pending->format('{Y}-{number}')->padding(2)->timezone('Asia/Kuala_Lumpur')->useSkipped(6))->toBe('2027-06');
+
+    Carbon::setTestNow();
+});
+
+it('rejects a negative padding override', function () {
+    expect(fn () => (new RunningNumberManager)->for('invoice')->padding(-1))->toThrow(InvalidArgumentException::class);
 });
 
 it('register() through the builder persists settings without needing to repeat the type', function () {

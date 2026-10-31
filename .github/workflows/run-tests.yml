@@ -29,13 +29,11 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest]
         php: [8.5, 8.4]
-        laravel: [13.*, 12.*]
+        laravel: [13.*]
         stability: [prefer-lowest, prefer-stable]
         include:
           - laravel: 13.*
             testbench: 11.*
-          - laravel: 12.*
-            testbench: 10.*
 
     name: P${{ matrix.php }} - L${{ matrix.laravel }} - ${{ matrix.stability }} - ${{ matrix.os }}
 
@@ -65,3 +63,64 @@ jobs:
 
       - name: Execute tests
         run: vendor/bin/pest --ci
+
+  databases:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - database: mysql
+            image: mysql:8.4
+            port: 3306
+            health: --health-cmd="mysqladmin ping" --health-interval=10s --health-timeout=5s --health-retries=10
+          - database: mariadb
+            image: mariadb:11.8
+            port: 3306
+            health: --health-cmd="healthcheck.sh --connect --innodb_initialized" --health-interval=10s --health-timeout=5s --health-retries=10
+          - database: pgsql
+            image: postgres:18
+            port: 5432
+            health: --health-cmd=pg_isready --health-interval=10s --health-timeout=5s --health-retries=10
+
+    name: P8.5 - L13 - ${{ matrix.database }}
+
+    services:
+      database:
+        image: ${{ matrix.image }}
+        env:
+          MYSQL_ROOT_PASSWORD: password
+          MYSQL_DATABASE: running_number_testing
+          MARIADB_ROOT_PASSWORD: password
+          MARIADB_DATABASE: running_number_testing
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: running_number_testing
+        ports:
+          - ${{ matrix.port }}:${{ matrix.port }}
+        options: ${{ matrix.health }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: 8.5
+          extensions: dom, curl, libxml, mbstring, zip, pcntl, pdo, pdo_mysql, pdo_pgsql, bcmath, intl, fileinfo
+          coverage: none
+
+      - name: Install dependencies
+        run: |
+          composer require "laravel/framework:13.*" "orchestra/testbench:11.*" --no-interaction --no-update
+          composer update --prefer-stable --prefer-dist --no-interaction
+
+      - name: Execute tests
+        run: vendor/bin/pest --ci
+        env:
+          RUNNING_NUMBER_TEST_CONNECTION: ${{ matrix.database }}
+          DB_HOST: 127.0.0.1
+          DB_PORT: ${{ matrix.port }}
+          DB_USERNAME: ${{ matrix.database == 'pgsql' && 'postgres' || 'root' }}
+          DB_PASSWORD: password

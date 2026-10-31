@@ -1,9 +1,11 @@
 <?php
 
+use Hasyirin\RunningNumber\Enums\ResetInterval;
 use Hasyirin\RunningNumber\Exceptions\RunningNumberAlreadyIssued;
 use Hasyirin\RunningNumber\Exceptions\RunningNumberNotSkipped;
 use Hasyirin\RunningNumber\Models\RunningNumber;
 use Hasyirin\RunningNumber\RunningNumberManager;
+use Illuminate\Support\Carbon;
 
 it('skips a single number and a batch of numbers, storing the reason and a formatted snapshot', function () {
     RunningNumber::factory()->create(['type' => 'invoice', 'number' => 27, 'padding' => 4]);
@@ -73,6 +75,61 @@ it('throws RunningNumberNotSkipped on double-use', function () {
 
     expect(fn () => $manager->useSkippedFor('invoice', 5, null, null, null))
         ->toThrow(RunningNumberNotSkipped::class);
+});
+
+it('steps over a run of consecutive skips and a separate later skip', function () {
+    RunningNumber::factory()->create(['type' => 'invoice', 'number' => 4, 'padding' => 4]);
+    $manager = new RunningNumberManager;
+    $manager->skipFor('invoice', [5, 6, 7, 9], null);
+
+    expect($manager->generateFor('invoice', null, null, null))->toBe('0008');
+    expect($manager->generateFor('invoice', null, null, null))->toBe('0010');
+});
+
+it('steps over skips that fill one or more lookup windows', function (int $skipped, int $expected) {
+    $row = RunningNumber::factory()->create(['type' => 'invoice', 'padding' => 1]);
+    $row->skips()->insert(collect(range(1, $skipped))->map(fn (int $number) => [
+        'running_number_id' => $row->id, 'number' => $number, 'formatted_number' => (string) $number, 'reset_cycle' => $row->reset_cycle,
+    ])->all());
+
+    expect((new RunningNumberManager)->generateFor('invoice', null, null, null))->toBe((string) $expected);
+})->with([
+    'one short of a window' => [999, 1000],
+    'exactly one window' => [1000, 1001],
+    'past one window' => [1500, 1501],
+]);
+
+it('applies a due reset before skipping, so the skip belongs to the new period', function () {
+    RunningNumber::factory()->create([
+        'type' => 'invoice', 'reset_interval' => ResetInterval::YEARLY, 'number' => 50,
+        'last_reset_at' => Carbon::parse('2026-06-01 00:00:00'),
+    ]);
+    $manager = new RunningNumberManager;
+    Carbon::setTestNow('2027-01-02 09:00:00');
+
+    $manager->skipFor('invoice', [1, 3], 'reserved');
+
+    expect([
+        $manager->generateFor('invoice', null, null, null),
+        $manager->generateFor('invoice', null, null, null),
+    ])->toBe(['00002', '00004']);
+
+    Carbon::setTestNow();
+});
+
+it('applies a due reset before useSkipped, so last period skips cannot be used', function () {
+    RunningNumber::factory()->create([
+        'type' => 'invoice', 'reset_interval' => ResetInterval::YEARLY, 'number' => 50,
+        'last_reset_at' => Carbon::parse('2026-06-01 00:00:00'),
+    ]);
+    $manager = new RunningNumberManager;
+    Carbon::setTestNow('2026-12-20 09:00:00');
+    $manager->skipFor('invoice', 60, null);
+    Carbon::setTestNow('2027-01-02 09:00:00');
+
+    expect(fn () => $manager->useSkippedFor('invoice', 60, null, null, null))->toThrow(RunningNumberNotSkipped::class);
+
+    Carbon::setTestNow();
 });
 
 it('throws RunningNumberNotSkipped for a number that was never skipped', function () {

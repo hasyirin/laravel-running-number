@@ -3,11 +3,12 @@
 namespace Hasyirin\RunningNumber;
 
 use BackedEnum;
+use Carbon\CarbonInterface;
+use Hasyirin\RunningNumber\Concerns\ResolvesSettings;
 use Hasyirin\RunningNumber\Concerns\ResolvesType;
 use Hasyirin\RunningNumber\Contracts\RunningNumber as RunningNumberContract;
 use Hasyirin\RunningNumber\Enums\ResetInterval;
 use Hasyirin\RunningNumber\Enums\UndoMode;
-use Hasyirin\RunningNumber\Exceptions\InvalidResetAnchor;
 use Hasyirin\RunningNumber\Exceptions\RunningNumberAlreadyIssued;
 use Hasyirin\RunningNumber\Exceptions\RunningNumberNotSkipped;
 use Hasyirin\RunningNumber\Exceptions\RunningNumberNotUndoable;
@@ -20,7 +21,14 @@ use Illuminate\Support\Facades\DB;
 
 class RunningNumberManager implements RunningNumberContract
 {
+    use ResolvesSettings;
     use ResolvesType;
+
+    private const SCHEDULE = ['reset_interval', 'reset_month', 'reset_day', 'reset_weekday', 'reset_hour', 'timezone'];
+
+    private const SKIP_WINDOW = 1000;
+
+    public const TRANSACTION_ATTEMPTS = 3;
 
     public function generate(Arrayable|array|string|int|BackedEnum|Model $type): string
     {
@@ -34,42 +42,37 @@ class RunningNumberManager implements RunningNumberContract
 
     public function generateFor(string $type, ?string $format, ?int $padding, ?string $timezone): string
     {
+        if (config('running-number.auto_register')) {
+            $this->registerIfMissing($type);
+        }
+
         return DB::transaction(function () use ($type, $format, $padding, $timezone) {
-            $row = RunningNumber::query()->type($type)->lockForUpdate()->first();
+            $row = $this->lockedRow($type);
+            $now = now();
 
-            if (! $row) {
-                if (! config('running-number.auto_register')) {
-                    throw RunningNumberTypeNotRegistered::forType($type);
+            $this->resetIfDue($row, $now);
+
+            if ($row->undo_mode === UndoMode::RECLAIM) {
+                $reclaimed = $row->undos()
+                    ->where('mode', UndoMode::RECLAIM)
+                    ->where('reset_cycle', $row->reset_cycle)
+                    ->whereNull('reclaimed_at')
+                    ->orderBy('number')
+                    ->lockForUpdate()
+                    ->first();
+
+                if ($reclaimed) {
+                    $reclaimed->update(['reclaimed_at' => $now]);
+
+                    return $this->format($row, $reclaimed->number, $format, $padding, $timezone, $now);
                 }
-
-                $this->registerFor($type, null, null, null, null, null, null, null, null, null);
-                $row = $this->lockedRow($type);
             }
 
-            $this->resetIfDue($row);
-
-            $reclaimed = $row->undos()
-                ->where('mode', UndoMode::RECLAIM)
-                ->where('reset_cycle', $row->reset_cycle)
-                ->whereNull('reclaimed_at')
-                ->orderBy('number')
-                ->lockForUpdate()
-                ->first();
-
-            if ($reclaimed) {
-                $reclaimed->update(['reclaimed_at' => now()]);
-
-                return $this->format($row, $reclaimed->number, $format, $padding, $timezone);
-            }
-
-            do {
-                $row->number++;
-            } while ($row->skips()->where('reset_cycle', $row->reset_cycle)->where('number', $row->number)->exists());
-
+            $row->number = $this->nextFreeNumber($row);
             $row->save();
 
-            return $this->format($row, $row->number, $format, $padding, $timezone);
-        });
+            return $this->format($row, $row->number, $format, $padding, $timezone, $now);
+        }, attempts: self::TRANSACTION_ATTEMPTS);
     }
 
     public function currentFor(string $type, ?string $format, ?int $padding, ?string $timezone): string
@@ -80,22 +83,25 @@ class RunningNumberManager implements RunningNumberContract
             throw RunningNumberTypeNotRegistered::forType($type);
         }
 
-        return $this->format($row, $row->number, $format, $padding, $timezone);
+        $now = now();
+        $nextReset = $this->nextBoundary($row, $row->last_reset_at);
+
+        // A due reset has not run yet, so the current number still belongs to the period that ended.
+        $at = $nextReset?->lte($now) ? $nextReset->subSecond() : $now;
+
+        return $this->format($row, $row->number, $format, $padding, $timezone, $at);
     }
 
     public function previewFor(string $type, ?int $number, ?string $format, ?int $padding, ?string $timezone): string
     {
-        $row = RunningNumber::query()->type($type)->first();
-
-        $resolvedFormat = $format ?? $row->format ?? config('running-number.default_format');
-        $resolvedPadding = $padding ?? $row->padding ?? config('running-number.default_padding');
-        $resolvedTimezone = $timezone ?? $row->timezone ?? config('running-number.default_timezone');
+        $row = RunningNumber::query()->type($type)->first() ?? new RunningNumber($this->declaredSettings($type) ?? $this->defaultSettings());
+        $padding ??= $row->padding;
 
         $representation = $number !== null
-            ? str_pad((string) $number, $resolvedPadding, '0', STR_PAD_LEFT)
-            : str_repeat('X', $resolvedPadding);
+            ? str_pad((string) $number, $padding, '0', STR_PAD_LEFT)
+            : str_repeat('X', $padding);
 
-        return $this->render($resolvedFormat, $representation, $resolvedTimezone);
+        return $this->render($row, $representation, $format, $timezone, now());
     }
 
     public function previewCurrentFor(string $type, ?string $format, ?int $padding, ?string $timezone): string
@@ -108,115 +114,141 @@ class RunningNumberManager implements RunningNumberContract
 
     public function registerFor(
         string $type,
-        ?ResetInterval $interval,
-        ?int $padding,
-        ?string $format,
-        ?int $resetMonth,
-        ?int $resetDay,
-        ?int $resetWeekday,
-        ?int $resetHour,
-        ?UndoMode $undoMode,
-        ?string $timezone,
+        ?ResetInterval $interval = null,
+        ?int $padding = null,
+        ?string $format = null,
+        ?int $resetMonth = null,
+        ?int $resetDay = null,
+        ?int $resetWeekday = null,
+        ?int $resetHour = null,
+        ?UndoMode $undoMode = null,
+        ?string $timezone = null,
+        bool $replace = false,
     ): void {
-        $interval ??= config('running-number.default_interval');
-
-        $this->validateAnchor($interval, $resetMonth, $resetDay, $resetWeekday, $resetHour);
-
-        $attributes = [
-            'reset_interval' => $interval,
-            'reset_month' => $resetMonth,
-            'reset_day' => $resetDay,
-            'reset_weekday' => $resetWeekday,
-            'reset_hour' => $resetHour,
-            'timezone' => $timezone ?? config('running-number.default_timezone'),
-            'undo_mode' => $undoMode ?? config('running-number.default_undo_mode'),
-            'padding' => $padding ?? config('running-number.default_padding'),
-            'format' => $format,
-        ];
+        $resolve = fn (?RunningNumber $row) => $this->resolveSettings(
+            $row?->only(array_keys($this->defaultSettings())) ?? $this->declaredSettings($type),
+            $replace,
+            $interval,
+            $padding,
+            $format,
+            $resetMonth,
+            $resetDay,
+            $resetWeekday,
+            $resetHour,
+            $undoMode,
+            $timezone,
+        );
 
         $existing = RunningNumber::query()->type($type)->first();
 
-        if ($existing) {
-            $existing->update($attributes);
+        if (! $existing) {
+            // Another request can create the type first. The insert then changes nothing and the row is patched below.
+            // The locking read sees that row even from an older snapshot of the caller's transaction.
+            $this->insertType($type, $resolve(null));
+            $existing = RunningNumber::query()->type($type)->lockForUpdate()->first();
+        }
+
+        if (! $existing->fill($resolve($existing))->isDirty(self::SCHEDULE)) {
+            $existing->save();
 
             return;
         }
 
-        RunningNumber::query()->create(['type' => $type, ...$attributes]);
+        DB::transaction(function () use ($type, $resolve) {
+            $row = $this->lockedRow($type);
+            $now = now();
+
+            $this->resetIfDue($row, $now);
+            $row->fill($resolve($row));
+
+            if ($row->isDirty(self::SCHEDULE)) {
+                $row->last_reset_at = $now;
+            }
+
+            $row->save();
+        }, attempts: self::TRANSACTION_ATTEMPTS);
     }
 
     public function skipFor(string $type, int|array $numbers, ?string $reason): void
     {
         DB::transaction(function () use ($type, $numbers, $reason) {
             $row = $this->lockedRow($type);
+            $now = now();
+
+            $this->resetIfDue($row, $now);
 
             foreach (Arr::wrap($numbers) as $number) {
                 if ($number <= $row->number) {
                     throw RunningNumberAlreadyIssued::forNumber($type, $number, $row->number);
                 }
 
-                $row->skips()->firstOrCreate(
+                $row->skips()->lockForUpdate()->firstOrCreate(
                     ['number' => $number, 'reset_cycle' => $row->reset_cycle],
                     [
-                        'formatted_number' => $this->format($row, $number, null, null, null),
+                        'formatted_number' => $this->format($row, $number, null, null, null, $now),
                         'reason' => $reason,
                     ],
                 );
             }
-        });
+        }, attempts: self::TRANSACTION_ATTEMPTS);
     }
 
     public function useSkippedFor(string $type, int $number, ?string $format, ?int $padding, ?string $timezone): string
     {
         return DB::transaction(function () use ($type, $number, $format, $padding, $timezone) {
             $row = $this->lockedRow($type);
+            $now = now();
+
+            $this->resetIfDue($row, $now);
 
             $skip = $row->skips()
                 ->where('number', $number)
                 ->where('reset_cycle', $row->reset_cycle)
                 ->whereNull('used_at')
+                ->lockForUpdate()
                 ->first();
 
             if (! $skip) {
                 throw RunningNumberNotSkipped::forNumber($type, $number);
             }
 
-            $skip->update(['used_at' => now()]);
+            $skip->update(['used_at' => $now]);
 
-            return $this->format($row, $number, $format, $padding, $timezone);
-        });
+            return $this->format($row, $number, $format, $padding, $timezone, $now);
+        }, attempts: self::TRANSACTION_ATTEMPTS);
     }
 
     public function undoFor(string $type, int $number, ?string $reason): void
     {
         DB::transaction(function () use ($type, $number, $reason) {
             $row = $this->lockedRow($type);
+            $now = now();
 
-            if ($number > $row->number) {
+            $this->resetIfDue($row, $now);
+
+            $skip = $row->skips()->where('number', $number)->where('reset_cycle', $row->reset_cycle)->lockForUpdate()->first();
+
+            $issued = $skip
+                ? $skip->used_at !== null
+                : $number >= 1 && $number <= $row->number;
+
+            if (! $issued) {
                 throw RunningNumberNotUndoable::forNumber($type, $number);
             }
 
-            $hasSkip = $row->skips()->where('number', $number)->where('reset_cycle', $row->reset_cycle)->exists();
+            $undo = $row->undos()->lockForUpdate()->firstOrNew(['number' => $number, 'reset_cycle' => $row->reset_cycle]);
 
-            if ($hasSkip) {
+            if ($undo->exists && $undo->reclaimed_at === null) {
                 throw RunningNumberNotUndoable::forNumber($type, $number);
             }
 
-            $alreadyUndone = $row->undos()->where('number', $number)->where('reset_cycle', $row->reset_cycle)->exists();
-
-            if ($alreadyUndone) {
-                throw RunningNumberNotUndoable::forNumber($type, $number);
-            }
-
-            $row->undos()->create([
-                'number' => $number,
-                'formatted_number' => $this->format($row, $number, null, null, null),
+            $undo->fill([
+                'formatted_number' => $this->format($row, $number, null, null, null, $now),
                 'mode' => $row->undo_mode,
                 'reason' => $reason,
-                'reset_cycle' => $row->reset_cycle,
                 'reclaimed_at' => null,
-            ]);
-        });
+            ])->save();
+        }, attempts: self::TRANSACTION_ATTEMPTS);
     }
 
     public function resetFor(string $type): void
@@ -226,42 +258,25 @@ class RunningNumberManager implements RunningNumberContract
 
             $row->update([
                 'number' => 0,
-                'last_reset_at' => now($row->timezone),
+                'last_reset_at' => now(),
                 'reset_cycle' => $row->reset_cycle + 1,
             ]);
-        });
+        }, attempts: self::TRANSACTION_ATTEMPTS);
     }
 
-    private function validateAnchor(ResetInterval $interval, ?int $month, ?int $day, ?int $weekday, ?int $hour): void
+    private function registerIfMissing(string $type): void
     {
-        $allowed = match ($interval) {
-            ResetInterval::NEVER => [],
-            ResetInterval::DAILY => ['hour'],
-            ResetInterval::WEEKLY => ['weekday', 'hour'],
-            ResetInterval::MONTHLY => ['day', 'hour'],
-            ResetInterval::QUARTERLY, ResetInterval::YEARLY => ['month', 'day', 'hour'],
-        };
-
-        $supplied = array_filter(
-            ['month' => $month, 'day' => $day, 'weekday' => $weekday, 'hour' => $hour],
-            fn ($value) => $value !== null,
-        );
-
-        foreach ($supplied as $field => $value) {
-            if (! in_array($field, $allowed, true)) {
-                throw InvalidResetAnchor::fieldNotAllowed('reset'.ucfirst($field), $interval);
-            }
+        if (RunningNumber::query()->type($type)->exists()) {
+            return;
         }
 
-        $ranges = ['month' => [1, 12], 'day' => [1, 31], 'weekday' => [0, 6], 'hour' => [0, 23]];
+        $this->insertType($type, $this->declaredSettings($type) ?? $this->resolveSettings(null, true));
+    }
 
-        foreach ($supplied as $field => $value) {
-            [$min, $max] = $ranges[$field];
-
-            if ($value < $min || $value > $max) {
-                throw InvalidResetAnchor::outOfRange('reset'.ucfirst($field), $value, $min, $max);
-            }
-        }
+    // upsert() is race-safe for new types, but it skips the model, so last_reset_at is passed in UTC here.
+    private function insertType(string $type, array $settings): void
+    {
+        RunningNumber::query()->upsert([['type' => $type, ...$settings, 'last_reset_at' => now()->utc()]], ['type'], ['type']);
     }
 
     private function lockedRow(string $type): RunningNumber
@@ -275,7 +290,7 @@ class RunningNumberManager implements RunningNumberContract
         return $row;
     }
 
-    private function resetIfDue(RunningNumber $row): void
+    private function resetIfDue(RunningNumber $row, CarbonInterface $now): void
     {
         $needsReset = $row->reset_interval->needsReset(
             $row->last_reset_at,
@@ -284,6 +299,7 @@ class RunningNumberManager implements RunningNumberContract
             $row->reset_weekday,
             $row->reset_hour,
             $row->timezone,
+            $now,
         );
 
         if (! $needsReset) {
@@ -292,24 +308,67 @@ class RunningNumberManager implements RunningNumberContract
 
         $row->update([
             'number' => 0,
-            'last_reset_at' => now($row->timezone),
+            'last_reset_at' => $now,
             'reset_cycle' => $row->reset_cycle + 1,
         ]);
     }
 
-    private function render(string $format, string $numberRepresentation, ?string $timezone): string
+    private function nextFreeNumber(RunningNumber $row): int
     {
-        return preg_replace_callback('/\{([^}]+)\}/', function ($matches) use ($numberRepresentation, $timezone) {
-            return $matches[1] === 'number' ? $numberRepresentation : now($timezone)->format($matches[1]);
+        $number = $row->number + 1;
+
+        do {
+            $windowEnd = $number + self::SKIP_WINDOW - 1;
+
+            $skipped = $row->skips()
+                ->where('reset_cycle', $row->reset_cycle)
+                ->whereBetween('number', [$number, $windowEnd])
+                ->orderBy('number')
+                ->lockForUpdate()
+                ->pluck('number');
+
+            foreach ($skipped as $skippedNumber) {
+                if ($skippedNumber !== $number) {
+                    return $number;
+                }
+
+                $number++;
+            }
+        } while ($number > $windowEnd);
+
+        return $number;
+    }
+
+    private function render(RunningNumber $row, string $numberRepresentation, ?string $format, ?string $timezone, CarbonInterface $at): string
+    {
+        $format ??= $row->format ?? config('running-number.default_format');
+
+        return preg_replace_callback('/\{([^}]+)\}/', fn (array $matches) => match (true) {
+            $matches[1] === 'number' => $numberRepresentation,
+            str_starts_with($matches[1], 'period:') => $this->periodEnd($row, $at)->format(substr($matches[1], strlen('period:'))),
+            default => $at->copy()->setTimezone($timezone ?? $row->timezone ?? date_default_timezone_get())->format($matches[1]),
         }, $format);
     }
 
-    private function format(RunningNumber $row, int $number, ?string $format, ?int $padding, ?string $timezone): string
+    private function periodEnd(RunningNumber $row, CarbonInterface $at): CarbonInterface
     {
-        $format ??= $row->format ?? config('running-number.default_format');
-        $padding ??= $row->padding;
-        $timezone ??= $row->timezone;
+        return $this->nextBoundary($row, $at)?->subSecond() ?? $at->copy()->setTimezone($row->timezone ?? date_default_timezone_get());
+    }
 
-        return $this->render($format, str_pad((string) $number, $padding, '0', STR_PAD_LEFT), $timezone);
+    private function nextBoundary(RunningNumber $row, CarbonInterface $after): ?CarbonInterface
+    {
+        return $row->reset_interval->nextBoundary(
+            $row->reset_month,
+            $row->reset_day,
+            $row->reset_weekday,
+            $row->reset_hour,
+            $row->timezone,
+            $after,
+        );
+    }
+
+    private function format(RunningNumber $row, int $number, ?string $format, ?int $padding, ?string $timezone, CarbonInterface $at): string
+    {
+        return $this->render($row, str_pad((string) $number, $padding ?? $row->padding, '0', STR_PAD_LEFT), $format, $timezone, $at);
     }
 }

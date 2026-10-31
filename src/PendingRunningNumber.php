@@ -5,6 +5,7 @@ namespace Hasyirin\RunningNumber;
 use Hasyirin\RunningNumber\Contracts\RunningNumber as RunningNumberContract;
 use Hasyirin\RunningNumber\Enums\ResetInterval;
 use Hasyirin\RunningNumber\Enums\UndoMode;
+use InvalidArgumentException;
 
 class PendingRunningNumber
 {
@@ -28,6 +29,10 @@ class PendingRunningNumber
 
     public function padding(int $padding): static
     {
+        if ($padding < 0) {
+            throw new InvalidArgumentException("[padding] must be 0 or greater, got {$padding}.");
+        }
+
         $this->padding = $padding;
 
         return $this;

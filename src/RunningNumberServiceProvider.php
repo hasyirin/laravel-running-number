@@ -15,9 +15,9 @@ class RunningNumberServiceProvider extends PackageServiceProvider
             ->name('laravel-running-number')
             ->hasConfigFile()
             ->hasMigrations([
-                'create_running_numbers_table',
-                'create_running_number_skips_table',
-                'create_running_number_undos_table',
+                '2026_07_15_000001_create_running_numbers_table',
+                '2026_07_15_000002_create_running_number_skips_table',
+                '2026_07_15_000003_create_running_number_undos_table',
             ])
             ->hasCommand(SyncRunningNumbersCommand::class);
     }

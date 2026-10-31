@@ -8,24 +8,22 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::create('running_number_undos', function (Blueprint $table) {
+        Schema::create('running_number_skips', function (Blueprint $table) {
             $table->id();
             $table->foreignId('running_number_id')->constrained()->cascadeOnDelete();
             $table->unsignedInteger('number');
             $table->string('formatted_number');
-            $table->string('mode');
             $table->string('reason')->nullable();
             $table->unsignedInteger('reset_cycle');
-            $table->timestamp('reclaimed_at')->nullable();
-            $table->timestamps();
+            $table->dateTime('used_at')->nullable();
+            $table->datetimes();
 
-            $table->unique(['running_number_id', 'number', 'reset_cycle']);
-            $table->index(['running_number_id', 'reset_cycle', 'reclaimed_at', 'number']);
+            $table->unique(['running_number_id', 'reset_cycle', 'number'], 'running_number_skips_number_unique');
         });
     }
 
     public function down(): void
     {
-        Schema::dropIfExists('running_number_undos');
+        Schema::dropIfExists('running_number_skips');
     }
 };

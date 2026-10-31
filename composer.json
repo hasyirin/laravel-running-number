@@ -18,13 +18,13 @@
     "require": {
         "php": "^8.4",
         "spatie/laravel-package-tools": "^1.93.3",
-        "illuminate/contracts": "^11.0||^12.0||^13.0"
+        "illuminate/contracts": "^13.30"
     },
     "require-dev": {
         "laravel/pint": "^1.32.1",
         "nunomaduro/collision": "^8.9.5",
         "larastan/larastan": "^3.13.2",
-        "orchestra/testbench": "^11.3.0||^10.0.0||^9.0.0",
+        "orchestra/testbench": "^11.3.0",
         "pestphp/pest": "^4.7.8||^5.3.4",
         "pestphp/pest-plugin-arch": "^4.0.2||^5.0",
         "pestphp/pest-plugin-laravel": "^4.1||^5.0.1",
@@ -41,8 +41,7 @@
     },
     "autoload-dev": {
         "psr-4": {
-            "Hasyirin\\RunningNumber\\Tests\\": "tests/",
-            "Workbench\\App\\": "workbench/app/"
+            "Hasyirin\\RunningNumber\\Tests\\": "tests/"
         }
     },
     "scripts": {

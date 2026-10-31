@@ -25,8 +25,8 @@ return new class extends Migration
             $table->string('format')->nullable();
             $table->unsignedInteger('number')->default(0);
             $table->unsignedInteger('padding')->default(5);
-            $table->timestamp('last_reset_at')->useCurrent();
-            $table->timestamps();
+            $table->dateTime('last_reset_at');
+            $table->datetimes();
         });
     }
 
