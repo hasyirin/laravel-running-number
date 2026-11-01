@@ -2,6 +2,21 @@
 
 All notable changes to `laravel-running-number` will be documented in this file.
 
+## v3.1.0 - 2026-11-01
+
+### Breaking changes
+
+- Requires Laravel 13.39 or later. On Laravel 13.30 to 13.38, Composer stays on v3.0.0.
+
+### Docs
+
+- SQLite: with Laravel's default `transaction_mode`, calls can fail with `database is locked` when several processes use the database at the same moment. They do not issue a wrong number. To prevent the error, set `'transaction_mode' => 'IMMEDIATE'` on the `sqlite` connection. See "Concurrency and gaps" in the README.
+- The v3.0.0 upgrade steps now drop the child tables first. The old order failed on foreign keys.
+
+### Notes
+
+- Contributors: the Pest 4 constraints are removed. The package code is the same as in v3.0.0.
+
 ## v3.0.0 - 2026-10-31
 
 ### Breaking changes
@@ -71,6 +86,7 @@ Migrations are no longer run automatically. You must now publish and run them ex
 php artisan vendor:publish --tag="running-number-migrations"
 php artisan migrate
 
+
 ```
 **Upgrading from v1.x:** v1 already created the tables, so `php artisan migrate` fails with "table already exists" on the published migrations. Publish them, then mark them as run before you migrate. v1 saved them in the `migrations` table without a date prefix, so rename those rows to the published file names:
 
@@ -80,6 +96,7 @@ foreach (['create_running_numbers_table', 'create_running_number_skips_table', '
     $published = glob(database_path("migrations/*_{$name}.php"))[0] ?? throw new RuntimeException("Publish the migrations first: {$name} is missing.");
     DB::table('migrations')->where('migration', $name)->update(['migration' => basename($published, '.php')]);
 }
+
 
 ```
 ## v1.0.0 - 2026-07-25
