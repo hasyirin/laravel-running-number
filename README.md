@@ -10,8 +10,8 @@ A Laravel package for generating sequential, zero-padded running numbers — inv
 ## Requirements
 
 - PHP 8.4 or later
-- Laravel 13.30 or later
-- MySQL, MariaDB or PostgreSQL in production. SQLite works, but it does not lock rows.
+- Laravel 13.39 or later
+- MySQL, MariaDB or PostgreSQL in production. SQLite works, but it needs one setting if several processes use it. See [Concurrency and gaps](#concurrency-and-gaps).
 
 ## Installation
 
@@ -265,6 +265,8 @@ If you call `generate()` outside a transaction, the number is saved at once. A l
 On MySQL and MariaDB, these calls also lock the skipped and undone numbers that they read, because a plain read in a transaction can return old data there. InnoDB locks ranges of the index, so while one transaction holds `generate()`, a `skip()` or `undo()` on another type can wait. Keep the transactions short, or use the `READ COMMITTED` isolation level, which locks less.
 
 These locks can also cause a `DeadlockException`. For example, two `skip()` or `undo()` calls on different types can deadlock when they run at the same moment, and on MariaDB 11.6 and later, two requests that use the same skipped or undone number can fail. The package then retries its own transaction, with up to 3 attempts in total. A lock wait timeout on MySQL or MariaDB also counts, so one call can wait up to 3 times `innodb_lock_wait_timeout` before it fails. If you call these methods inside your own transaction, the package cannot retry, because Laravel retries only the outermost transaction. Retry your transaction instead, for example with `DB::transaction($callback, attempts: 3)`.
+
+SQLite has no row locks. It locks the whole database, so parallel `generate()` calls still never return the same number. But with Laravel's default `transaction_mode` (`DEFERRED`), these calls can fail with `database is locked` when several processes use the database at the same moment, for example a web request and a queue worker. The package's retries do not prevent this. To prevent the error, set `'transaction_mode' => 'IMMEDIATE'` on the `sqlite` connection in `config/database.php`. This setting applies to every transaction on that connection.
 
 ### Testing with `fake()`
 

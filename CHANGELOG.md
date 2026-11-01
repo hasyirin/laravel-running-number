@@ -44,7 +44,7 @@ All notable changes to `laravel-running-number` will be documented in this file.
 
 ### Upgrading
 
-There is no upgrade path from v1 or v2. Drop the `running_numbers`, `running_number_skips` and `running_number_undos` tables and delete their rows in the `migrations` table. Then publish the migrations again with `--force` and run `php artisan migrate`. Every counter starts again from 0.
+There is no upgrade path from v1 or v2. Drop the `running_number_undos`, `running_number_skips` and `running_numbers` tables, in that order, and delete their rows in the `migrations` table. Then publish the migrations again with `--force` and run `php artisan migrate`. Every counter starts again from 0.
 
 ### Notes
 
