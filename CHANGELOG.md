@@ -2,6 +2,16 @@
 
 All notable changes to `laravel-running-number` will be documented in this file.
 
+## v3.1.1 - 2026-11-04
+
+### Changes
+
+- The public API has stricter PHPDoc types: array shapes and generics on the contract, the manager, the facade and `RunningNumber::fake()`. If your code passes wrong types, your static analysis can now report errors. The package code works the same.
+
+### Notes
+
+- Contributors: PHPStan now runs at level 10. `larastan/larastan` is `^3.14.0` and `pestphp/pest` is `^5.3.5`.
+
 ## v3.1.0 - 2026-11-01
 
 ### Breaking changes
@@ -87,6 +97,7 @@ php artisan vendor:publish --tag="running-number-migrations"
 php artisan migrate
 
 
+
 ```
 **Upgrading from v1.x:** v1 already created the tables, so `php artisan migrate` fails with "table already exists" on the published migrations. Publish them, then mark them as run before you migrate. v1 saved them in the `migrations` table without a date prefix, so rename those rows to the published file names:
 
@@ -96,6 +107,7 @@ foreach (['create_running_numbers_table', 'create_running_number_skips_table', '
     $published = glob(database_path("migrations/*_{$name}.php"))[0] ?? throw new RuntimeException("Publish the migrations first: {$name} is missing.");
     DB::table('migrations')->where('migration', $name)->update(['migration' => basename($published, '.php')]);
 }
+
 
 
 ```
