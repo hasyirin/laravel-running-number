@@ -42,6 +42,9 @@ class RunningNumberUndo extends Model
         ];
     }
 
+    /**
+     * @return BelongsTo<RunningNumber, $this>
+     */
     public function runningNumber(): BelongsTo
     {
         return $this->belongsTo(RunningNumber::class);

@@ -121,7 +121,7 @@ enum ResetInterval: string
         return collect([0, 3, 6, 9])
             ->map(fn (int $offset) => $this->yearlyBoundary($now, $this->normalizeMonth($month + $offset), $day, $hour))
             ->sortByDesc(fn (CarbonInterface $boundary) => $boundary->timestamp)
-            ->first();
+            ->firstOrFail();
     }
 
     private function nextDailyBoundary(CarbonInterface $now, int $hour): CarbonInterface
@@ -171,14 +171,14 @@ enum ResetInterval: string
         return collect([0, 3, 6, 9])
             ->map(fn (int $offset) => $this->nextYearlyBoundary($now, $this->normalizeMonth($month + $offset), $day, $hour))
             ->sortBy(fn (CarbonInterface $boundary) => $boundary->timestamp)
-            ->first();
+            ->firstOrFail();
     }
 
     // Built from the date, not with setTime(): setTime() keeps the current UTC offset, so an
     // hour that happens twice (DST end) would give two different boundaries on one day.
     private function atHour(CarbonInterface $date, int $hour): CarbonInterface
     {
-        return $date::create($date->year, $date->month, $date->day, $hour, 0, 0, $date->getTimezone());
+        return $date::createStrict($date->year, $date->month, $date->day, $hour, 0, 0, $date->getTimezone());
     }
 
     // Date arithmetic starts from midnight: a time of day such as 23:30 can fall into an hour that the

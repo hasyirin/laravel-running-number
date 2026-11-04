@@ -36,6 +36,7 @@ use Illuminate\Support\Facades\Date;
  */
 class RunningNumber extends Model
 {
+    /** @use HasFactory<RunningNumberFactory> */
     use HasFactory;
 
     protected $fillable = [
@@ -71,10 +72,13 @@ class RunningNumber extends Model
 
     // Saved in UTC: app-time text has no offset, so in the hour that repeats when daylight saving
     // time ends it reads back one hour early, and a boundary in that hour would reset again.
+    /**
+     * @return Attribute<Carbon, mixed>
+     */
     protected function lastResetAt(): Attribute
     {
         return Attribute::make(
-            get: fn (?string $value) => $value === null ? null : Date::parse($value, 'UTC')->setTimezone(date_default_timezone_get()),
+            get: fn (mixed $value) => is_string($value) ? Date::parse($value, 'UTC')->setTimezone(date_default_timezone_get()) : null,
             set: fn (mixed $value) => $value === null ? null : $this->asDateTime($value)->utc()->format($this->getDateFormat()),
         )->withoutObjectCaching();
     }
@@ -95,6 +99,10 @@ class RunningNumber extends Model
         return RunningNumberFactory::new();
     }
 
+    /**
+     * @param  Builder<self>  $query
+     * @return Builder<self>
+     */
     public function scopeType(Builder $query, string $type): Builder
     {
         return $query->where('type', $type);

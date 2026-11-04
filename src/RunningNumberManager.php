@@ -18,7 +18,12 @@ use Illuminate\Contracts\Support\Arrayable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
+use RuntimeException;
 
+/**
+ * @phpstan-import-type RunningNumberType from RunningNumberContract
+ * @phpstan-import-type Settings from ResolvesSettings
+ */
 class RunningNumberManager implements RunningNumberContract
 {
     use ResolvesSettings;
@@ -30,11 +35,17 @@ class RunningNumberManager implements RunningNumberContract
 
     public const TRANSACTION_ATTEMPTS = 3;
 
+    /**
+     * @param  RunningNumberType  $type
+     */
     public function generate(Arrayable|array|string|int|BackedEnum|Model $type): string
     {
         return $this->generateFor($this->resolveType($type), null, null, null);
     }
 
+    /**
+     * @param  RunningNumberType  $type
+     */
     public function for(Arrayable|array|string|int|BackedEnum|Model $type): PendingRunningNumber
     {
         return new PendingRunningNumber($this, $this->resolveType($type));
@@ -145,7 +156,7 @@ class RunningNumberManager implements RunningNumberContract
             // Another request can create the type first. The insert then changes nothing and the row is patched below.
             // The locking read sees that row even from an older snapshot of the caller's transaction.
             $this->insertType($type, $resolve(null));
-            $existing = RunningNumber::query()->type($type)->lockForUpdate()->first();
+            $existing = $this->lockedRow($type);
         }
 
         if (! $existing->fill($resolve($existing))->isDirty(self::SCHEDULE)) {
@@ -169,6 +180,9 @@ class RunningNumberManager implements RunningNumberContract
         }, attempts: self::TRANSACTION_ATTEMPTS);
     }
 
+    /**
+     * @param  int|array<int>  $numbers
+     */
     public function skipFor(string $type, int|array $numbers, ?string $reason): void
     {
         DB::transaction(function () use ($type, $numbers, $reason) {
@@ -274,6 +288,9 @@ class RunningNumberManager implements RunningNumberContract
     }
 
     // upsert() is race-safe for new types, but it skips the model, so last_reset_at is passed in UTC here.
+    /**
+     * @param  Settings  $settings
+     */
     private function insertType(string $type, array $settings): void
     {
         RunningNumber::query()->upsert([['type' => $type, ...$settings, 'last_reset_at' => now()->utc()]], ['type'], ['type']);
@@ -341,13 +358,13 @@ class RunningNumberManager implements RunningNumberContract
 
     private function render(RunningNumber $row, string $numberRepresentation, ?string $format, ?string $timezone, CarbonInterface $at): string
     {
-        $format ??= $row->format ?? config('running-number.default_format');
+        $format ??= $row->format ?? $this->defaultFormat();
 
         return preg_replace_callback('/\{([^}]+)\}/', fn (array $matches) => match (true) {
             $matches[1] === 'number' => $numberRepresentation,
             str_starts_with($matches[1], 'period:') => $this->periodEnd($row, $at)->format(substr($matches[1], strlen('period:'))),
             default => $at->copy()->setTimezone($timezone ?? $row->timezone ?? date_default_timezone_get())->format($matches[1]),
-        }, $format);
+        }, $format) ?? throw new RuntimeException(preg_last_error_msg());
     }
 
     private function periodEnd(RunningNumber $row, CarbonInterface $at): CarbonInterface

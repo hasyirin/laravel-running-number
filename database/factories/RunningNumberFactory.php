@@ -7,6 +7,9 @@ use Hasyirin\RunningNumber\Enums\UndoMode;
 use Hasyirin\RunningNumber\Models\RunningNumber;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
+/**
+ * @extends Factory<RunningNumber>
+ */
 class RunningNumberFactory extends Factory
 {
     protected $model = RunningNumber::class;

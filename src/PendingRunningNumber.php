@@ -82,6 +82,9 @@ class PendingRunningNumber
         );
     }
 
+    /**
+     * @param  int|array<int>  $numbers
+     */
     public function skip(int|array $numbers, ?string $reason = null): void
     {
         $this->manager->skipFor($this->type, $numbers, $reason);

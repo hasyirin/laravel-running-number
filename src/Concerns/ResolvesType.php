@@ -3,12 +3,19 @@
 namespace Hasyirin\RunningNumber\Concerns;
 
 use BackedEnum;
+use Hasyirin\RunningNumber\Contracts\RunningNumber;
 use Illuminate\Contracts\Support\Arrayable;
 use Illuminate\Database\Eloquent\Model;
 use UnexpectedValueException;
 
+/**
+ * @phpstan-import-type RunningNumberType from RunningNumber
+ */
 trait ResolvesType
 {
+    /**
+     * @param  RunningNumberType  $type
+     */
     protected function resolveType(Arrayable|array|string|int|BackedEnum|Model $type): string
     {
         // Model implements Arrayable, so it must be checked first to prevent collect()

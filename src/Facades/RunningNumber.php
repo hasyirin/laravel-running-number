@@ -14,16 +14,18 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Facade;
 
 /**
- * @method static string generate(Arrayable|array|string|int|BackedEnum|Model $type)
- * @method static PendingRunningNumber for(Arrayable|array|string|int|BackedEnum|Model $type)
- * @method static void assertGenerated(Arrayable|array|string|int|BackedEnum|Model $type, ?int $times = null)
- * @method static void assertNotGenerated(Arrayable|array|string|int|BackedEnum|Model $type)
- * @method static void assertSkipped(Arrayable|array|string|int|BackedEnum|Model $type, int|array $numbers)
- * @method static void assertUsedSkipped(Arrayable|array|string|int|BackedEnum|Model $type, int $number)
- * @method static void assertUndone(Arrayable|array|string|int|BackedEnum|Model $type, int $number)
- * @method static void assertRegistered(Arrayable|array|string|int|BackedEnum|Model $type, ?Closure $callback = null)
- * @method static void assertReset(Arrayable|array|string|int|BackedEnum|Model $type, ?int $times = null)
- * @method static Collection generated(Arrayable|array|string|int|BackedEnum|Model $type)
+ * @phpstan-import-type Registration from RunningNumberFake
+ *
+ * @method static string generate(Arrayable<array-key, mixed>|array<mixed>|string|int|BackedEnum|Model $type)
+ * @method static PendingRunningNumber for(Arrayable<array-key, mixed>|array<mixed>|string|int|BackedEnum|Model $type)
+ * @method static void assertGenerated(Arrayable<array-key, mixed>|array<mixed>|string|int|BackedEnum|Model $type, ?int $times = null)
+ * @method static void assertNotGenerated(Arrayable<array-key, mixed>|array<mixed>|string|int|BackedEnum|Model $type)
+ * @method static void assertSkipped(Arrayable<array-key, mixed>|array<mixed>|string|int|BackedEnum|Model $type, int|array<int> $numbers)
+ * @method static void assertUsedSkipped(Arrayable<array-key, mixed>|array<mixed>|string|int|BackedEnum|Model $type, int $number)
+ * @method static void assertUndone(Arrayable<array-key, mixed>|array<mixed>|string|int|BackedEnum|Model $type, int $number)
+ * @method static void assertRegistered(Arrayable<array-key, mixed>|array<mixed>|string|int|BackedEnum|Model $type, (Closure(Registration): bool)|null $callback = null)
+ * @method static void assertReset(Arrayable<array-key, mixed>|array<mixed>|string|int|BackedEnum|Model $type, ?int $times = null)
+ * @method static Collection<int, array{type: string, number: int, result: string}> generated(Arrayable<array-key, mixed>|array<mixed>|string|int|BackedEnum|Model $type)
  *
  * @see RunningNumberManager
  * @see RunningNumberFake

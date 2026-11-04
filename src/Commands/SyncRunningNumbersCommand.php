@@ -2,11 +2,15 @@
 
 namespace Hasyirin\RunningNumber\Commands;
 
+use Hasyirin\RunningNumber\Concerns\ResolvesSettings;
 use Hasyirin\RunningNumber\Contracts\RunningNumber as RunningNumberContract;
 use Hasyirin\RunningNumber\RunningNumberManager;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 
+/**
+ * @phpstan-import-type DeclaredSettings from ResolvesSettings
+ */
 class SyncRunningNumbersCommand extends Command
 {
     private const SETTINGS = ['interval', 'padding', 'format', 'resetMonth', 'resetDay', 'resetWeekday', 'resetHour', 'undoMode', 'timezone'];
@@ -17,6 +21,7 @@ class SyncRunningNumbersCommand extends Command
 
     public function handle(RunningNumberContract $manager): int
     {
+        /** @var array<string, mixed> $types */
         $types = config('running-number.types', []);
 
         foreach ($types as $type => $settings) {
@@ -41,6 +46,7 @@ class SyncRunningNumbersCommand extends Command
         }
 
         DB::transaction(function () use ($types, $manager) {
+            /** @var array<string, DeclaredSettings|null> $types */
             foreach ($types as $type => $settings) {
                 $manager->registerFor($type, ...($settings ?? []), replace: true);
             }

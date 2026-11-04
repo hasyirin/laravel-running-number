@@ -9,10 +9,19 @@ use Hasyirin\RunningNumber\PendingRunningNumber;
 use Illuminate\Contracts\Support\Arrayable;
 use Illuminate\Database\Eloquent\Model;
 
+/**
+ * @phpstan-type RunningNumberType Arrayable<array-key, mixed>|array<mixed>|string|int|BackedEnum|Model
+ */
 interface RunningNumber
 {
+    /**
+     * @param  RunningNumberType  $type
+     */
     public function generate(Arrayable|array|string|int|BackedEnum|Model $type): string;
 
+    /**
+     * @param  RunningNumberType  $type
+     */
     public function for(Arrayable|array|string|int|BackedEnum|Model $type): PendingRunningNumber;
 
     public function generateFor(string $type, ?string $format, ?int $padding, ?string $timezone): string;
@@ -37,6 +46,9 @@ interface RunningNumber
         bool $replace = false,
     ): void;
 
+    /**
+     * @param  int|array<int>  $numbers
+     */
     public function skipFor(string $type, int|array $numbers, ?string $reason): void;
 
     public function useSkippedFor(string $type, int $number, ?string $format, ?int $padding, ?string $timezone): string;
